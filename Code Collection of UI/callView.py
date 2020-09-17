@@ -18,8 +18,9 @@ import sketch as sk # for generate sketch from the shape
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QPoint,QRect
 from PyQt5.QtGui import  QIcon, QImage, QPainter, QPen, QBrush, QPixmap, QColor
 
+import projection
 
-globalGrid = None
+#globalGrid = None
 
 class MyThread(QThread):
     # Create a counter thread
@@ -59,7 +60,6 @@ class Canvas(QLabel):
         self.setMinimumSize(1,1)
         self.setMaximumSize(256,256) #currently
 
-
         # Clear the canvas.
         self.pixmap().fill(self.background_color)
        
@@ -68,11 +68,33 @@ class Canvas(QLabel):
         self.generic_mousePressEvent(e)
 
     def eraser_mouseMoveEvent(self, e):
+        #print(e.x())
+        #print(e.y())
+
+        image = self.pixmap().toImage()
+        w, h = image.width(), image.height()
+        x, y = e.x(), e.y()
+
+        have_seen = set()
+        queue = [(x, y)]
+
+        def get_cardinal_points(have_seen, center_pos):
+            points = []
+            cx, cy = center_pos
+            for x, y in [(1, 0), (0, 1), (-1, 0), (0, -1)]:
+                xx, yy = cx + x, cy + y
+                if (xx >= 0 and xx < w and
+                    yy >= 0 and yy < h and
+                    (xx, yy) not in have_seen):
+                    points.append((xx, yy))
+                    have_seen.add((xx, yy))
+            return points
+
         if self.last_pos:
             p = QPainter(self.pixmap())
             p.setPen(QPen(self.eraser_color, 30, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            print(e.pos())
             p.drawLine(self.last_pos, e.pos())
-
             self.last_pos = e.pos()
             self.update()
 
@@ -115,6 +137,8 @@ class Canvas(QLabel):
         self.generic_mousePressEvent(e)
 
     def pen_mouseMoveEvent(self, e):
+        #print(e.x())
+        #print(e.y())
         if self.last_pos:
             p = QPainter(self.pixmap())
             p.setPen(QPen(self.active_color, 1, Qt.SolidLine, Qt.SquareCap, Qt.RoundJoin))
@@ -137,7 +161,8 @@ class Canvas(QLabel):
 
      # Fill events
     def fill_mousePressEvent(self, e):
-
+        #print(e.x())
+        #print(e.y())
         if e.button() == Qt.LeftButton:
             self.active_color = self.primary_color
         else:
@@ -176,7 +201,6 @@ class Canvas(QLabel):
             if image.pixel(x, y) == target_color:
                 p.drawPoint(QPoint(x, y))
                 queue.extend(get_cardinal_points(have_seen, (x, y)))
-
         self.update()
 
     #for new image
@@ -200,7 +224,11 @@ class ThumbLabel(QLabel):
         self.bigpixmap.fill(self.background_color)   #default white
         self.CameraPos = CameraPos
         self.AppWindow = appwindow
+        self.grid = None   # try later
         self.reset()
+
+    def update_grid(self, newgrid):
+        self.grid = newgrid
 
     def reset(self):
         # Create the pixmap for display.
@@ -214,18 +242,18 @@ class ThumbLabel(QLabel):
     def setbigmap(self,pixmap):
         self.bigpixmap = pixmap.copy()  #copy to avoid memory problem
     def mouseDoubleClickEvent(self, event):
-        print("Clicked on Thumbnail List")
         pixmap = self.bigpixmap.copy()  #recover thumbnail to canvas
         self.Canvas.setPixmap(pixmap)
-        print(self.CameraPos)
-        global globalGrid
+        self.update_grid(self.AppWindow.getgrid())
+        #print(self.CameraPos)
+        #global globalGrid
         
-        if globalGrid is not None:
-            print("Inside globalGrid")
-            rd.update_image(self.CameraPos,globalGrid,"opened")
+        if self.grid is not None:
+            rd.update_image(self.CameraPos,self.grid ,"opened")
         else:
-            print("Global grid is None")
-        if self.AppWindow:
+            print("Grid is None")
+        
+        if self.AppWindow is not None:
             self.AppWindow.Update_image()
         else:
             print("AppWindow is None")
@@ -236,7 +264,7 @@ class ThumbLabel(QLabel):
     def setPaintWindow(self, window):
         self.AppWindow = window
 
-class QCustomQWidget(QWidget):
+class QCustomQWidget(QWidget):   # add the grid parameter
     def __init__(self, AppWindow, CameraPos, parent=None):  #
         super(QCustomQWidget, self).__init__(parent)
         self.textQVBoxLayout = QtWidgets.QVBoxLayout()
@@ -248,9 +276,13 @@ class QCustomQWidget(QWidget):
 
         self.AppWindow = AppWindow
         self.CameraPos = CameraPos
+        self.grid = None   #currently now, update later
+        
         self.allQHBoxLayout  = QtWidgets.QHBoxLayout()
         self.iconQLabel      = ThumbLabel(None, None, self.AppWindow, self.CameraPos)
         self.iconQLabel.setScaledContents(True);
+        #self.update_grid(None)  #for update the grid for iconQlabel
+
         self.allQHBoxLayout.addWidget(self.iconQLabel, 0)
         self.allQHBoxLayout.addLayout(self.textQVBoxLayout, 1)
 
@@ -262,6 +294,11 @@ class QCustomQWidget(QWidget):
         self.textDownQLabel.setStyleSheet('''
             color: rgb(255, 0, 0);
         ''')
+
+    def update_grid(self,grid):
+        self.grid = grid
+        if self.iconQLabel is not None:
+            self.iconQLabel.update_grid(grid)
 
     def setTextUp (self, text):
         self.textUpQLabel.setText(text)
@@ -294,6 +331,7 @@ class PaintWindow(QMainWindow):
         return str1 
     def editList(self, row, pixmap, cw, ch, camerapose=''): #row is an int here, for 6 views actually
         #edit the size first
+        #print("Edit the list")
         bigmap = pixmap.copy()
         pixmap = pixmap.scaledToWidth(cw)
         pixmap = pixmap.scaledToHeight(ch)
@@ -301,6 +339,9 @@ class PaintWindow(QMainWindow):
         cntItem = self.ui.ThumbnailListView.item(row)  
         myQCustomQWidget = self.ui.ThumbnailListView.itemWidget(cntItem)
         myQCustomQWidget.setIconLabel(pixmap)
+        if self.grid is None:   #currently may be None since grid has not generated yet.
+            print("NULL Grid")
+        myQCustomQWidget.update_grid(self.grid)    #update grid here
         if camerapose !='':
             name =  'View: ('+self.listToString(camerapose)+')'  #could be none
         else:
@@ -310,6 +351,7 @@ class PaintWindow(QMainWindow):
         myQCustomQWidget.setBigmap(bigmap)
     
     def addList(self,pixmap,cw,ch,camerapose=''): #add pixmap and no, remember to pass in the camerapos now
+        #print("Add to List")
         index = 'No. '+str(self.cnt)
         if camerapose !='':
             name =  'View: ('+self.listToString(camerapose)+')'  #could be none
@@ -320,11 +362,14 @@ class PaintWindow(QMainWindow):
         myQCustomQWidget.setTextDown(name)
         myQCustomQWidget.setCanvas(self.ui.Canvas)
 
+        #if self.grid ==None:  grid is there to update
+        #    print("Error");
         bigmap = pixmap.copy()
         pixmap = pixmap.scaledToWidth(cw)
         pixmap = pixmap.scaledToHeight(ch)
         pixmap = pixmap.copy()
         myQCustomQWidget.setIconLabel(pixmap)
+        myQCustomQWidget.update_grid(self.grid)    # update grid here
 
         # for recovering
         myQCustomQWidget.setBigmap(bigmap)
@@ -337,6 +382,7 @@ class PaintWindow(QMainWindow):
         self.ui.ThumbnailListView.setItemWidget(myQListWidgetItem, myQCustomQWidget)
  
     def initThumbnailItems(self):
+        #print("Init thumbnail")
         self.ui.leftThumbnail.deleteLater()  
         self.ui.rightThumbnail.deleteLater()
         self.ui.bottomThumbnail.deleteLater()
@@ -362,6 +408,7 @@ class PaintWindow(QMainWindow):
             myQCustomQWidget.setTextDown(name)
             myQCustomQWidget.setCanvas(self.ui.Canvas)
             #myQCustomQWidget.setIcon(icon)
+            myQCustomQWidget.update_grid(self.grid)
 
             # Create QListWidgetItem
             myQListWidgetItem = QListWidgetItem(self.ui.ThumbnailListView)
@@ -397,12 +444,16 @@ class PaintWindow(QMainWindow):
         pixmap = QPixmap(self.imagefilePath)   #then load the image to this window
         self.ui.Canvas.setPixmap(pixmap)
 
-    def __init__(self, filePath, appWindow):
+    
+    def update_grid(self,newgrid):
+        self.grid = newgrid
+    def __init__(self, filePath, appWindow):  #adding the grid here
         super().__init__()
         self.ui= Ui_PaintWindow()  #directly self = this object of that class
         self.ui.setupUi(self) 
 
         self.AppWindow = appWindow
+        self.grid = None   #for containing the grid from the windows 1
 
         self.cnt = 1  #
         self.imagefilePath = filePath
@@ -488,21 +539,37 @@ class PaintWindow(QMainWindow):
     def Update_Button(self):
         # call add_function first and initialize again
         self.Add_Function()
-
+        cw, ch = 36 , 36 
         cntbounding_box_min_x = -2
         cntbounding_box_max_x = 2
         grid_res_x = 64 
         cntwidth = 256
-        cntheight = 256
-
+        cntheight = 256 
         grid_now = sk.initialization(self.ViewList, self.CameraList,cntbounding_box_min_x,cntbounding_box_max_x,grid_res_x,cntwidth, cntheight) 
         #image = rd.generate_image(-2,-2,-2,2,2,2, 4. / (grid_res_x-1), grid_res_x, grid_res_x, grid_res_x, cntwidth, cntheight, grid_now, self.CameraList[0], 1)
         #torchvision.utils.save_image(image, "./test.png", nrow=8, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
-        global globalGrid
-        globalGrid = grid_now
-        self.windows2.update_grid(grid_now)
-        self.windows2.activateWindow();  #active the right onw
-    
+        #global globalGrid
+        #globalGrid = grid_now
+        #self.AppWindow.saveFile_Mask()
+        self.grid = grid_now   #update
+        for index, camera in [(0, [5,0,0]),
+            (1, [-5, 0, 0]),
+            (2, [0, 0, 5])
+            #(3, [0, 0, -5]),
+            #(4, [0, 5, 0]),  
+            #(5, [0, -5, 0])
+            ]:
+
+            rd.update_mask(list(camera),grid_now,"mask")   #produce the mask
+            self.maskfilepath = "results/mask.png"  #set up an filepath for the mask file
+            #configure the second window
+            self.AppWindow.windows2.configure(self.maskfilepath)
+            pixmap = self.ui.Canvas.pixmap()
+            self.convert_imagetoTensor(pixmap,list(camera))
+            self.editList(index,pixmap,cw,ch,self.View)
+            self.windows2.update_grid(grid_now)
+            self.windows2.activateWindow();  #active the right onw
+
     def set_primary_color(self, hex):
         self.ui.Canvas.set_primary_color(hex)
 
@@ -637,11 +704,13 @@ class PaintWindow(QMainWindow):
         #image = rd.generate_image(-2,-2,-2,2,2,2, 4. / (grid_res_x-1), grid_res_x, grid_res_x, grid_res_x, cntwidth, cntheight, grid_now, self.CameraList[0], 1)
         #torchvision.utils.save_image(image, "./test.png", nrow=8, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
         self.windows2.update_grid(grid_now)
-        global globalGrid
-        globalGrid = grid_now
+        #global globalGrid
+        #globalGrid = grid_now
+        self.grid = grid_now 
+        print("Initialized")
+        projection.projectXY(self.grid, 256, 256)
         self.windows2.startProgressBar()
         self.windows2.activateWindow();  #active the right onw
-        
     
     #pose could be a list stuff?
     def Add_ViewPose(self, pose):  # add viewpose from 3D navigation view for adding in the paint view - reset ViewList and Camera List
@@ -660,12 +729,12 @@ class PaintWindow(QMainWindow):
             flag = True
             pixmap = self.ui.Canvas.pixmap()
             self.convert_imagetoTensor(pixmap,[0,-5,0])
-            self.editList(5,pixmap,cw,ch,self.View)  
+            self.editList(5,pixmap,cw,ch,[0,-5,0])  
         if self.ui.topButton.isChecked() == True:
             flag = True
             pixmap = self.ui.Canvas.pixmap()
             self.convert_imagetoTensor(pixmap,[0,5,0])
-            self.editList(4,pixmap,cw,ch,self.View) 
+            self.editList(4,pixmap,cw,ch,[0,5,0]) 
             #self.ui.topThumbnail.setPixmap(pixmap)
         if self.ui.leftButton.isChecked() ==True:
             flag = True
@@ -675,22 +744,22 @@ class PaintWindow(QMainWindow):
             #pixmap = pixmap.copy(
             #        QRect(QPoint(420, 60), QPoint(cw, ch))
             #    )       
-            self.editList(0,pixmap,cw,ch,self.View)    
+            self.editList(0,pixmap,cw,ch,[5,0,0])    
         if self.ui.rightButton.isChecked() ==True:
             flag = True
             pixmap = self.ui.Canvas.pixmap()
             self.convert_imagetoTensor(pixmap,[-5,0,0])
-            self.editList(1,pixmap,cw,ch,self.View)  
+            self.editList(1,pixmap,cw,ch,[-5,0,0])  
         if self.ui.frontButton.isChecked() ==True:
             flag = True
             pixmap = self.ui.Canvas.pixmap()
             self.convert_imagetoTensor(pixmap,[0,1,5.5])
-            self.editList(2,pixmap,cw,ch,self.View)
+            self.editList(2,pixmap,cw,ch,[0,1,5.5])
         if self.ui.backButton.isChecked() ==True:
             flag = True
             pixmap = self.ui.Canvas.pixmap()
             self.convert_imagetoTensor(pixmap,[0,0,-5])
-            self.editList(3,pixmap,cw,ch,self.View)
+            self.editList(3,pixmap,cw,ch,[0,0,-5])
         if flag ==False: #adding my own view
             pixmap = self.ui.Canvas.pixmap()
             itemflag =self.convert_imagetoTensor(pixmap,self.View)
@@ -702,10 +771,12 @@ class PaintWindow(QMainWindow):
 
 
 class AppWindow(QMainWindow):
+    def getgrid(self):
+        return self.grid
     def update_grid(self, grid):
         self.grid = grid
-        global globalGrid
-        globalGrid = grid
+        #global globalGrid
+        #globalGrid = grid
         #currently update the image as well
         rd.update_image(list([5,0,0]),self.grid,"opened")
         self.imagefilepath = "results/opened.png"   #for finding that update image through this file path
@@ -716,8 +787,8 @@ class AppWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.grid = grid #coule be None
-        global globalGrid
-        globalGrid = grid
+        #global globalGrid
+        #globalGrid = grid
         self.ui.actionOpen.triggered.connect(self.OpenGridFile)
         self.ui.actionClose.triggered.connect(self.clear)
         self.ui.actionCube.triggered.connect(self.OpenCube)
@@ -735,7 +806,7 @@ class AppWindow(QMainWindow):
         self.ui.label.mouseReleaseEvent=self.getPosRelease
         self.last2d = np.array([0,0])
         self.origintransformation = np.eye(4)
-        self.originquaternion = Quaternion(w=1.0, x=0.0, y=0.0, z=0.0)
+        self.originquaternion = Quaternion(w=1.0, x=0.0, y=0.0, z=0.0)   #default is like this (0, 0, 0, 0), could change later to fit for the sketch forming
         self.ui.confirmButton.clicked.connect(self.confirm)
         self.perturbvec = np.array([0,0,5])
         self.clear()
@@ -756,28 +827,28 @@ class AppWindow(QMainWindow):
         self.sketchfilepath = "results/sketch.png"
         # save now
         self.windows2.configure(self.sketchfilepath)
-        #pixmap =  QtGui.QPixmap(self.imagefilepath)
+        # pixmap =  QtGui.QPixmap(self.imagefilepath)
 
 
     def OpenCube(self):
         self.grid,self.imagefilepath= rd.initial_setting_basicshape("cube")   #should be already assigned the grid
-        global globalGrid
-        globalGrid = self.grid
+        #global globalGrid
+        #globalGrid = self.grid
         self.startProgressBar()
         self.Update_image();
     
     def OpenCylinder(self):
         self.grid, self.imagefilepath= rd.initial_setting_basicshape("cylinder")
-        global globalGrid
-        globalGrid = self.grid
+        #global globalGrid
+        #globalGrid = self.grid
         self.startProgressBar()
         self.Update_image();
 
     def OpenGridFile(self):
         filePath, _ = QFileDialog.getOpenFileName(self, "Obtain Grid", "", "All Files(*.*);;PNG(*.png);;JPEG(*.jpg *.jpeg)")
         self.grid, self.imagefilepath = rd.initial_setting_filepath(filePath)
-        global globalGrid
-        globalGrid = self.grid
+        #global globalGrid
+        #globalGrid = self.grid
         self.startProgressBar()
         self.Update_image();
 
@@ -808,10 +879,12 @@ class AppWindow(QMainWindow):
             self.windows2.show()
         else:
             #self.saveFile()
+            #print("Inside file mask")
             self.saveFile_Mask()
             #pass camera pos
             camerapos = list(self.pose[0:3])  # for recording in the Painting View
-            self.windows2.Add_ViewPose(camerapos)   # use this function to pass current camera position to the paiting window (windows2)
+            self.windows2.Add_ViewPose(camerapos)   # use this function to pass current camera position to the painting window (windows2)
+            self.windows2.update_grid(self.grid)   #update the grid to the painting window (windows2)
             self.windows2.activateWindow();  # activate the second window (the paiting window)
 
     
@@ -842,8 +915,8 @@ class AppWindow(QMainWindow):
             self.originquaternion = q
             self.pose = q.rotate(self.perturbvec)
             rd.update_image(list(self.pose[0:3]),self.grid,"opened")
-            global globalGrid
-            globalGrid = self.grid
+            #global globalGrid
+            #globalGrid = self.grid
             self.Update_image()
             self.p1 = self.p2
         self.last2d[0] = x
@@ -881,7 +954,7 @@ class AppWindow(QMainWindow):
         x = x-1.0
         y = 1.0-y
         ztmp = 1.0-x*x-y*y
-        z =0.0
+        z = 0.0
         if ztmp>0:
             z = math.sqrt(ztmp)       
         projectedpoint = np.array([x,y,z])
