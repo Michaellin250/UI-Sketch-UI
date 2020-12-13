@@ -250,8 +250,8 @@ def projectXY(grid, imgWidth, imgHeight, cameraPos):
     mvpmatrix = Mvp.matrix();
     print("Mvp Matrix: ")
     print(mvpmatrix)
-    allSides = [[-1, 0], [1, 0], [0,0], [0, -1], [0,1]]
-    radius = 10
+    allSides = [[-1, 0], [1, 0], [0,0], [0, -1], [0,1], [1,1], [-1,-1],[1,-1], [-1,1]]
+    radius = 2
     #print(M)
     #M = np.dot(Mvp, Morth)
     for i in range(64):
