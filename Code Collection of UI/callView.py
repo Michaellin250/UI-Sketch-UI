@@ -699,7 +699,6 @@ class PaintWindow(QMainWindow):
         grid_res_x = 64 
         cntwidth = 256
         cntheight = 256
-
         grid_now = sk.initialization(self.ViewList, self.CameraList,cntbounding_box_min_x,cntbounding_box_max_x,grid_res_x,cntwidth, cntheight) 
         #image = rd.generate_image(-2,-2,-2,2,2,2, 4. / (grid_res_x-1), grid_res_x, grid_res_x, grid_res_x, cntwidth, cntheight, grid_now, self.CameraList[0], 1)
         #torchvision.utils.save_image(image, "./test.png", nrow=8, padding=2, normalize=False, range=None, scale_each=False, pad_value=0)
@@ -708,7 +707,7 @@ class PaintWindow(QMainWindow):
         #globalGrid = grid_now
         self.grid = grid_now 
         print("Initialized")
-        projection.projectXY(self.grid, 256, 256)
+        projection.projectXY(self.grid, 256, 256, [5,0,0])
         self.windows2.startProgressBar()
         self.windows2.activateWindow();  #active the right onw
     

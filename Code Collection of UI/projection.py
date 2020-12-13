@@ -35,7 +35,7 @@ def normalized(v):
 
 class ModelTransform:
     def __init__(self):    #underscore means protected data
-        self._scale = np.full(3,1);
+        self._scale = np.full(3,2);
         self._position = np.zeros(3)
         self._rotation = Quaternion(1,0,0,0)
         self._matrix = None
@@ -159,7 +159,7 @@ class ViewTransform:
 
 class PerspectiveTransform:
     def __init__(self):
-        self._aspect = 2.0
+        self._aspect = 2
         self._fov = 40*np.pi /180
         self._near = 0.1
         self._far = 1.0
@@ -225,6 +225,12 @@ class MVPTransform:
         self.projection = PerspectiveTransform()
     
     def matrix(self):
+        print("Printing projection Matrix")
+        print(self.projection.matrix)
+        print("Printing View Matrix")
+        print(self.view.matrix)
+        print("Printing Model Matrix")
+        print(self.model.matrix)
         m = self.projection.matrix @ self.view.matrix @ self.model.matrix
         return m.astype(np.float32)
 
@@ -232,7 +238,7 @@ class MVPxy(MVPTransform):
     def __init__(self):
         super().__init__()
         self.name = 'MVP'
-        self.projection.aspect = 2.0  # 256x256
+        self.projection.aspect = 2  # 256x256
         self.projection.far = 1.0
         self.view.eye = np.array((5,0,0))
 
@@ -244,22 +250,8 @@ def projectXY(grid, imgWidth, imgHeight, cameraPos):
     mvpmatrix = Mvp.matrix();
     print("Mvp Matrix: ")
     print(mvpmatrix)
-    #Morth = constructOrth(-2, -2, -2, 2, 2, 2)
-    #print("Morth Matrix: ")
-    #print(Morth)
-    #t = [0, 1, 0]
-    #g = [1, 0, 0]
-    #print("W matrix: ")
-    #W = constructW(g)
-    #print(W)
-    #print("U Matrix: ")
-    #U = constructU(t, W)
-    #print(U)
-    #print("V Matrix: ")
-    #V = np.cross(W, U)
-    #print(V)
-    #MCam = constructMCamera(U, V, W, cameraPos)    # np.multiply(np.multiply(Mvp, Morth), MCam)
-    #M = np.multiply(Mvp, M)
+    allSides = [[-1, 0], [1, 0], [0,0], [0, -1], [0,1]]
+    radius = 10
     #print(M)
     #M = np.dot(Mvp, Morth)
     for i in range(64):
@@ -272,70 +264,13 @@ def projectXY(grid, imgWidth, imgHeight, cameraPos):
                     #print(coords)
                     p = np.multiply(mvpmatrix, coords)
                     #print(p)
-                    xPixel = int(p[0,0])
-                    yPixel = int(p[1, 0])
-                    #print(xPixel, yPixel);   #ignore z and w -> depth
-                    img1[(math.floor(yPixel * 2 + math.ceil((imgHeight / 1.5))) % imgHeight), (math.floor(xPixel * 2.5 + math.floor((imgWidth) / 4)) % imgWidth)] = 1   
+                    for side in allSides:
+                        for eachRadius in range(1, radius + 1):
+                            xPixel = int(p[0,0]) + side[0] * eachRadius        # x is y and y is x
+                            yPixel = int(p[1, 0]) + side[1] * eachRadius
+                            #print(xPixel, yPixel);   #ignore z and w -> depth   
+                            img1[(math.ceil(yPixel + math.ceil((imgHeight / 1.5))) % imgHeight), (math.floor(xPixel + math.floor((imgWidth / 4))) % imgWidth)] = 1   
     torchvision.utils.save_image(img1, "./" + "projection.png")
-
-def constructW(g):
-    return (-1 * np.array(g)) / (np.linalg.norm(g))
-
-def constructU(t, w):
-    val = np.cross(t,w)
-    #print(val)
-    return val / (np.linalg.norm(val))
-
-def constructMCamera(vecU, vecV, vecW, cameraPos):
-    first = np.zeros((4,4))
-    first[0,0] = vecU[0]
-    first[0,1] = vecU[1]
-    first[0,2] = vecU[2]
-    first[1,0] = vecV[0]
-    first[1,1] = vecV[1]
-    first[1,2] = vecV[2]
-    first[2,0] = vecW[0]
-    first[2,1] = vecW[1]
-    first[2,2] = vecW[2]
-    second = np.zeros((4,4))
-    second[0,3] = -cameraPos[0]
-    second[1, 3] = -cameraPos[1]
-    second[2,3] = -cameraPos[2]
-    second[0,0] = 1
-    second[1,1] = 1
-    second[2,2] = 1
-    second[3,3] = 1
-    return first.dot(second)
-
-def constructMvp(imgWidth, imgHeight):
-    Mvp = np.zeros((4,4))
-    Mvp[0,0] = (imgWidth / 2)
-    Mvp[0,3] = ((imgWidth - 1) / 2)
-    Mvp[1,1] = (imgHeight / 2)
-    Mvp[1,3] = ((imgHeight - 1) / 2)
-    Mvp[2,2] = 1
-    Mvp[3,3] = 1
-    return Mvp
-
-def perspectiveMatrix(n , f):
-    P = np.zeros((4,4))
-    P[0,0] = n 
-    P[1,1] = n
-    P[2,2] = n + f
-    P[2,3] = -f * n
-    P[3,2] = 1
-    return P
-
-def constructOrth(l, b, n, r, t, f):
-    Morth = np.zeros((4,4))
-    Morth[0,0] = (2 / (r - l))
-    Morth[0,3] = (-((r + l) / (r - l)))
-    Morth[1,1] = (2 /(t - b))
-    Morth[1,3] = (-((t + b) / (t - b)))
-    Morth[2,2] = (2 / (n - f))
-    Morth[2,3] = (-((n + f) / (n - f)))
-    Morth[3,3] = 1
-    return Morth
 
 def convertToBinaryGrid(grid):
     binaryGrid = grid.clone()
