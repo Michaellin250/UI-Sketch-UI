@@ -94,16 +94,19 @@ class ModelTransform:
 
 class ViewTransform:
     def __init__(self):
-        self._eye = np.ones(3)    #camera position
+        self._eye = np.array([1, 1, 1])   #camera position
         self._translationmatrix = np.identity(4);
-        neye = np.negative(self.eye)
+        neye = np.negative(self.eye) #self.eye #np.negative(self.eye)
+        print("PRINTING NEYE");
+        print(neye)
         self._translationmatrix[:3,3] = neye;   #define the translationmatrix accordingly
-        self.look_at(np.array((0,0,0)),np.array((0,1,0)))  #look at zero and the up vector is (0, 1, 0)
+        self.look_at(np.array((0, 0, 0)),np.array((0,1,0)))  #look at zero and the up vector is (0, 1, 0)
     
     @property
     def eye(self):
         if self._eye is None:
             self._eye = LA.inv(np.negative(self.translationmatrix))[:3,3];
+            #self._eye = LA.inv((self.translationmatrix))[:3,3];
         return self._eye
 
     @eye.setter
@@ -112,11 +115,14 @@ class ViewTransform:
         _ = self.rotation
         _ = self.translationmatrix  #make sure the rotation is saved
         self._matrix = None  
+        #self.look_at(np.array((0,0,0)),np.array((0,1,0)))  #look at zero and the up vector is (0, 1, 0)
 
     @property
     def rotation(self):
         if self._rotation is None:
+            print("PRINTING SELF.MATRIX [:3, :3]")
             self._rotation = Quaternion(matrix = self.matrix[:3,:3])
+            print(self._rotation)
         return self._rotation
     @rotation.setter
     def rotation(self,value):
@@ -139,10 +145,16 @@ class ViewTransform:
 
     @property
     def matrix(self):
+        print("INSIDE MATRIX MOETHOD")
         if self._matrix is None:
+            print("PRINTING ROTATION TRANSOFMRATION MATRIX")
             R = self.rotation.transformation_matrix
+            print(R)
             T = self.translationmatrix
+            print("PRINTING TRANSLATION MATRIX")
+            print(T)
             self._matrix = R@T
+            print("PRINTING END VIEW MATRIX")
         return self._matrix
     
     @matrix.setter 
@@ -152,17 +164,29 @@ class ViewTransform:
         self._rotation = None
     
     def look_at(self,target,up):
-        zax = normalized(self.eye - np.asarray(target))
+        print("PRINTING ZAX")
+        zax = normalized((self.eye - np.asarray(target)))
+        print(zax)
         xax = normalized(np.cross(np.asarray(up),zax))
+        print("PRINTING XAX")
+        print(xax)
+        print("PRINTING YAX")
         yax = np.cross(zax,xax)
-        self.rotation = Quaternion(matrix = np.stack((xax,yax,zax),axis=0))   #3*3 here
+        print(yax)
+        print("PRINTING MATRIX STACK")
+        print(np.stack((xax, yax, zax), axis = 0))
+        self.rotation = Quaternion(matrix = np.stack((xax,yax, zax),axis=0))   #3*3 here
+        print("PRINTING ROTATION QUATERNION")
+        print(self.rotation)
+        print("PRINTING LOOK AT ROTATION TRANSFORMATION MATRIX")
+        print(self.rotation.transformation_matrix)
 
 class PerspectiveTransform:
     def __init__(self):
-        self._aspect = 2
+        self._aspect = 1
         self._fov = 40*np.pi /180
         self._near = 0.1
-        self._far = 1.0
+        self._far = 10
         self._matrix = None
     
     @property
@@ -212,9 +236,9 @@ class PerspectiveTransform:
             n, f = self._near, self._far
             assert abs(n - f) > 0
             self._matrix = np.array((
-                (  2*n/(r-l),           0,            (r+l)/(r-l),  0),
-                (          0,   2*n/(t-b),             (t+b)/(t-b),  0),
-                (0, 0,   (f+n)/(n-f), 2*(f*n)/(n-f)),
+                (  (2*abs(n))/(r-l),           0,            (r+l)/(r - l),  0),
+                (          0,   (2*abs(n))/(t-b),             (t+b)/(t-b),  0),
+                (0, 0,   (abs(n) + abs(f))/(abs(n)-abs(f)), (2*(abs(f)*abs(n)))/(abs(n) - abs(f))),
                 (          0,           0, -1,  0)))
         return self._matrix
 
@@ -227,11 +251,12 @@ class MVPTransform:
     def matrix(self):
         print("Printing projection Matrix")
         print(self.projection.matrix)
-        print("Printing View Matrix")
+        print("Printing END View Matrix")
+        #self.view.matrix = self.view.matrix * np.array([-1,1,1,1]).reshape((4, 1))
         print(self.view.matrix)
         print("Printing Model Matrix")
         print(self.model.matrix)
-        m = self.projection.matrix @ self.view.matrix @ self.model.matrix
+        m = (self.projection.matrix @ (self.view.matrix @  self.model.matrix)) #self.projection.matrix @ self.view.matrix @ self.model.matrix
         return m.astype(np.float32)
 
 class MVPxy(MVPTransform):
@@ -239,38 +264,60 @@ class MVPxy(MVPTransform):
         super().__init__()
         self.name = 'MVP'
         self.projection.aspect = 2  # 256x256
-        self.projection.far = 1.0
-        self.view.eye = np.array((5,0,0))
+        self.projection.far = 10
+        self.view.eye = np.array([1, 1, 1])  #np.array((1, 1, 1))
 
-def projectXY(grid, imgWidth, imgHeight, cameraPos):
+def projectXY(grid, imgWidth, imgHeight):
     binaryRep = convertToBinaryGrid(grid)
     #print(binaryRep[32,32,32]);
-    img1 = torch.zeros([imgWidth, imgHeight])
-    Mvp = MVPxy()
-    mvpmatrix = Mvp.matrix();
-    print("Mvp Matrix: ")
-    print(mvpmatrix)
+    #img1 = torch.zeros([imgWidth, imgHeight])
+    theta = np.radians(270)
+    c, s = np.cos(theta), np.sin(theta)
+    Rotated = np.array(((c, -s), (s, c)))
+    print("Printing Rotated matrix")
+    print(Rotated)
+    #print("Mvp Matrix: ")
+    #print(mvpmatrix)
     allSides = [[-1, 0], [1, 0], [0,0], [0, -1], [0,1], [1,1], [-1,-1],[1,-1], [-1,1]]
-    radius = 2
-    #print(M)
-    #M = np.dot(Mvp, Morth)
-    for i in range(64):
-        for j in range(64):
-            for k in range(64):
-                if binaryRep[i,j,k]:
-                    #print("i, j, k: ",i,j,k); 
-                    coords = np.reshape([i, j, k, 1], (4, 1))
-                    #print(M)
-                    #print(coords)
-                    p = np.multiply(mvpmatrix, coords)
-                    #print(p)
-                    for side in allSides:
-                        for eachRadius in range(1, radius + 1):
-                            xPixel = int(p[0,0]) + side[0] * eachRadius        # x is y and y is x
-                            yPixel = int(p[1, 0]) + side[1] * eachRadius
-                            #print(xPixel, yPixel);   #ignore z and w -> depth   
-                            img1[(math.ceil(yPixel + math.ceil((imgHeight / 1.5))) % imgHeight), (math.floor(xPixel + math.floor((imgWidth / 4))) % imgWidth)] = 1   
-    torchvision.utils.save_image(img1, "./" + "projection.png")
+    Mvp = MVPxy();
+    radius = 1
+    print("Printing camera position")
+    print(Mvp.view.eye)
+    #Mvp.view.look_at(np.array((0,0,0)),np.array((0,1,0)))
+    mvpmatrix = Mvp.matrix();
+    for eachViewNumber in range(0, 3): #ViewNumber 0 represents front, 1 represents left, 2 represents right
+        img1 = torch.zeros([imgWidth, imgHeight])
+        for i in range(64):
+            for j in range(64):
+                for k in range(64):
+                    if binaryRep[i,j,k]:
+                        #print("i, j, k: ",i,j,k); 
+                        #coords = np.reshape([j, i, k, 1], (4, 1)) # sidways front view
+                        #coords = np.reshape([j, k, i, 1], (4, 1)) #upside down left view
+                        #coords = np.reshape([i, k, j, 1], (4, 1)) #back view
+                        #coords = np.reshape([k, i, j, 1], (4, 1)) # side ways back view
+                        #coords = np.reshape([k, j, i , 1], (4, 1)) # right view
+                        coords = np.reshape([1, 1, 1, 1], (4, 1))
+                        if eachViewNumber == 0:
+                            coords = np.reshape([i, j, k, 1], (4, 1))
+                        elif eachViewNumber == 1:
+                            coords = np.reshape([k, j, i, 1], (4, 1))
+                        elif eachViewNumber == 2:
+                            coords = np.reshape([j, k, i , 1], (4, 1)) 
+                        p = np.multiply(mvpmatrix, coords)
+                        for side in allSides:
+                            for eachRadius in range(1, radius + 1):
+                                xPixel = int(p[0,0]) + side[0] * eachRadius        # x is y and y is x
+                                yPixel = int(p[1, 0]) + side[1] * eachRadius
+                                if eachViewNumber == 2:
+                                    ans = np.column_stack((yPixel, xPixel)) @ Rotated
+                                    yPixel = int(ans[0,0])
+                                    xPixel = int(ans[0,1])
+                                #print(xPixel, yPixel);   #ignore z and w -> depth   
+                                img1[yPixel, xPixel] = 1
+                                #img1[(yPixel + int(imgHeight / 4), (xPixel + int(imgWidth / 4))] = 1 
+                                #img1[(math.ceil(yPixel + math.ceil((imgHeight / 4)))), (math.floor(xPixel + math.floor((imgWidth / 4))))] = 1   
+        torchvision.utils.save_image(img1, "./" + "projection" + str(eachViewNumber) + ".png")
 
 def convertToBinaryGrid(grid):
     binaryGrid = grid.clone()

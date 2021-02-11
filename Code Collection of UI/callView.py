@@ -707,7 +707,7 @@ class PaintWindow(QMainWindow):
         #globalGrid = grid_now
         self.grid = grid_now 
         print("Initialized")
-        projection.projectXY(self.grid, 256, 256, [5,0,0])
+        projection.projectXY(self.grid, 256, 256)
         self.windows2.startProgressBar()
         self.windows2.activateWindow();  #active the right onw
     
